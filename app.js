@@ -4,6 +4,7 @@ const TAB_KEY = "eefmShellTab";
 const DAY_KEY = "eefmShellDay";
 const AUTO_DAY_KEY = "eefmAutoDayEnabled";
 const ACTUALS_KEY = "eefmTimelineActuals";
+const FULL_MANUAL_KEY = "eefmFullManualOpen";
 
 const tabNames = ["Today","Itinerary","Operations","Field Notes","More"];
 let activeTab = localStorage.getItem(TAB_KEY) || "Today";
@@ -55,7 +56,7 @@ function timeline(items){
   return items.map((x,i)=>{
     const rec=log[timelineKey(selectedDay,i)]||{};
     return `<button onclick="toggleTimeline(${i})" style="width:100%;text-align:left;border:0;border-bottom:1px solid #eee8de;background:${rec.completed?"#f2f7ef":"transparent"};padding:12px 0;color:inherit">
-      <div class="timeline-time">${esc(x.time)}</div>
+      <div class="timeline-time">Planned ${esc(x.time)}</div>
       <strong>${rec.completed?"✓ ":""}${esc(x.activity)}</strong>
       <div class="muted">${esc(x.note)}</div>
       <div style="margin-top:6px">${x.status?`<span class="pill">${esc(x.status)}</span>`:""}${rec.actualTime?`<span class="pill">Actual ${esc(rec.actualTime)}</span>`:""}</div>
@@ -66,6 +67,51 @@ function timeline(items){
 function emptyState(){
   return card(`<div class="eyebrow">Private data</div><h2>No expedition package loaded</h2><p>This public app shell contains no private expedition information.</p><p class="muted">Import your private EEFM JSON package from Files. It will be stored only in this app/browser profile on this device.</p><input id="packageFile" type="file" accept=".json,application/json"><button class="action" onclick="importPackage()">Import private package</button>`);
 }
+function timedTimeline(day){
+  if (!day || !Array.isArray(day.timeline)) return [];
+  return day.timeline.map((x,i)=>({...x,index:i,mins:parseLeadingTime(x.time)})).filter(x=>x.mins!==null);
+}
+function commandSequence(day){
+  const items=timedTimeline(day);
+  if(!items.length) return [];
+  const now=new Date();
+  const mins=now.getHours()*60+now.getMinutes();
+  let ni=items.findIndex(x=>x.mins>=mins);
+  if(ni<0) ni=items.length-1;
+  const a=items[Math.max(0,ni-1)], b=items[ni], c=items[ni+1]||null;
+  const r=[];
+  if(a) r.push(["NOW",a]);
+  if(b && b.index!==a.index) r.push(["NEXT",b]);
+  if(c) r.push(["LATER",c]);
+  return r;
+}
+function fixedCommitments(day){
+  return Array.isArray(day?.timeline) ? day.timeline.filter(x=>String(x.status||"").toLowerCase()==="fixed") : [];
+}
+function fullManualOpen(){ return localStorage.getItem(FULL_MANUAL_KEY)==="true"; }
+function toggleFullManual(){
+  localStorage.setItem(FULL_MANUAL_KEY,fullManualOpen()?"false":"true");
+  render();
+}
+function dailyCommandCard(day){
+  const seq=commandSequence(day), fixed=fixedCommitments(day);
+  return card(`
+    <div class="eyebrow">Daily Command View</div>
+    <h2>Now · Next · Later</h2>
+    ${seq.length ? seq.map(([label,x])=>`
+      <div style="padding:12px 0;border-bottom:1px solid #eee8de;">
+        <div class="eyebrow">${label}</div>
+        <strong>${esc(x.time)} · ${esc(x.activity)}</strong>
+        <div class="muted">${esc(x.note)}</div>
+      </div>`).join("") : `<p class="muted">No timed sequence detected for this day.</p>`}
+    ${fixed.length ? `<div style="margin-top:16px;"><div class="eyebrow">Fixed Commitments</div>${fixed.map(x=>`<span class="pill">${esc(x.time)} · ${esc(x.activity)}</span>`).join("")}</div>` : ""}
+    <div style="margin-top:16px;">
+      <span class="pill">Weather: check live conditions</span>
+      <span class="pill">Maps: use saved/offline maps</span>
+    </div>
+  `);
+}
+
 function todaySummary(day){
   const next=getNextFixedAnchor(day);
   const log=actuals();
@@ -77,10 +123,30 @@ function todaySummary(day){
     <button class="action" onclick="quickNote()">Quick field note</button><button class="action" onclick="jumpToTimeline()">Jump to timeline</button>`);
 }
 function todayScreen(){
-  const day=currentDay(); if(!day) return emptyState();
-  return todaySummary(day)
-    + card(`<div class="eyebrow">${esc(day.dateLabel||`Day ${day.day||selectedDay+1}`)}</div><h2>${esc(day.title||"Today")}</h2>${day.subtitle?`<p>${esc(day.subtitle)}</p>`:""}${day.epigraph?.text?`<blockquote style="margin:12px 0;padding-left:14px;border-left:3px solid #c5a55a">“${esc(day.epigraph.text)}”<div class="muted" style="margin-top:6px">— ${esc(day.epigraph.author||"")}</div></blockquote>`:""}`)
-    + card(`<div id="timelineSection" class="eyebrow">Operations</div><h2>Day at a glance</h2><p class="muted">Tap an item to mark it complete and record the actual time.</p>${timeline(day.timeline)}`)
+  const day=currentDay();
+  if(!day) return emptyState();
+
+  const epigraph=day.epigraph?.text ? `
+    <blockquote style="margin:12px 0;padding-left:14px;border-left:3px solid #c5a55a;">
+      “${esc(day.epigraph.text)}”
+      <div class="muted" style="margin-top:6px;">— ${esc(day.epigraph.author||"")}</div>
+    </blockquote>` : "";
+
+  const manual=fullManualOpen();
+
+  let html=todaySummary(day)
+    + dailyCommandCard(day)
+    + card(`
+      <div class="eyebrow">${esc(day.dateLabel||`Day ${day.day||selectedDay+1}`)}</div>
+      <h2>${esc(day.title||"Today")}</h2>
+      ${epigraph}
+      <button class="action" onclick="toggleFullManual()">${manual?"Hide Full Field Manual":"Show Full Field Manual"}</button>
+    `)
+    + card(`<div id="timelineSection" class="eyebrow">Operations</div><h2>Working Timeline</h2><p class="muted">Tap an item to mark it complete. Planned and actual times remain distinct.</p>${timeline(day.timeline)}`);
+
+  if(!manual) return html;
+
+  return html
     + card(`<div class="eyebrow">Interpretive Plan</div>${Array.isArray(day.interpretivePlan)?day.interpretivePlan.map(x=>`<h3>${esc(x.heading)}</h3><p>${esc(x.text)}</p>`).join(""):""}`)
     + card(`<div class="eyebrow">Fieldwork</div>${list(day.fieldwork)}`)
     + card(`<div class="eyebrow">Photography</div>${list(day.photography)}`)
@@ -88,6 +154,7 @@ function todayScreen(){
     + card(`<div class="eyebrow">Evening Record</div>${list(day.eveningRecord)}`)
     + card(`<div class="eyebrow">Tomorrow</div><p>${esc(day.tomorrowPreview||"")}</p>`);
 }
+
 function itineraryScreen(){
   const d=days(); if(!d.length) return emptyState();
   return card(`<div class="eyebrow">Private package</div><h2>Itinerary</h2><p class="muted">${d.length} days loaded locally.</p>`)
@@ -110,7 +177,7 @@ function moreScreen(){
   return card(`<div class="eyebrow">Privacy & Data Status</div><h2>Private-by-design</h2><div class="${p?"ok":"warn"}">${p?"PRIVATE PACKAGE LOADED LOCALLY":"NO PRIVATE PACKAGE LOADED"}</div><p><strong>Network:</strong> ${navigator.onLine?"Online":"Offline"}</p><p><strong>Public repository:</strong> generic application shell only.</p><p><strong>On this device:</strong> ${p?"private expedition package":"no expedition package"} and ${arr.length} field note${arr.length===1?"":"s"}.</p>`)
     + card(`<div class="eyebrow">Field behavior</div><h2>Automatic expedition day</h2><p class="muted">During 1–17 September 2026 the app can automatically open the matching day.</p><button class="action" onclick="toggleAutoDay()">${auto?"Disable":"Enable"} automatic day selection</button>`)
     + card(`<div class="eyebrow">Private package controls</div><h2>Import / remove</h2><input id="packageFileMore" type="file" accept=".json,application/json"><button class="action" onclick="importPackage('packageFileMore')">Import or replace package</button>${p?`<button class="action danger" onclick="removePackage()">Remove private package from this device</button>`:""}`)
-    + card(`<div class="eyebrow">Build</div><h2>EEFM shell v1.2</h2><p class="muted">Automatic day selection, next-fixed-anchor summary, completion/actual-time logging, structured field notes and offline/private status.</p>`);
+    + card(`<div class="eyebrow">Build</div><h2>EEFM shell v1.2</h2><p class="muted">Daily Command View, Now/Next/Later sequencing, fixed commitments, collapsible Field Manual, automatic day selection, actual-time logging and structured field notes.</p>`);
 }
 function render(){ autoSelectCurrentDay(); const app=document.getElementById("app"); app.innerHTML=activeTab==="Today"?todayScreen():activeTab==="Itinerary"?itineraryScreen():activeTab==="Operations"?operationsScreen():activeTab==="Field Notes"?notesScreen():moreScreen(); document.getElementById("tabs").innerHTML=tabNames.map(name=>`<button class="${name===activeTab?"active":""}" onclick="setTab('${name}')">${name}</button>`).join(""); }
 function setTab(name){ activeTab=name; localStorage.setItem(TAB_KEY,name); scrollTo(0,0); render(); }
