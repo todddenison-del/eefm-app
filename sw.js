@@ -1,4 +1,4 @@
-const CACHE_NAME = "eefm-shell-v1.5";
+const CACHE_NAME = "eefm-shell-v1.5.1";
 
 const APP_SHELL = [
 
