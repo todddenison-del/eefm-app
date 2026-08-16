@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="EEFM">
+  <meta name="theme-color" content="#172033">
+  <title>EEFM Mobile</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <style>
+    *{box-sizing:border-box}
+    body{margin:0;background:#f4f1ea;color:#172033;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding-bottom:88px}
+    header{background:#172033;color:white;padding:calc(26px + env(safe-area-inset-top)) 28px 28px}
+    header small{letter-spacing:.18em;text-transform:uppercase;opacity:.75}
+    header h1{font-family:Georgia,serif;font-size:2.2rem;margin:.4rem 0 0}
+    main{padding:16px}
+    .card{background:white;border:1px solid #d8d2c7;border-radius:22px;padding:20px;margin:14px 0}
+    h2,h3{font-family:Georgia,serif;margin:.2rem 0 .8rem}
+    .eyebrow{font-size:.78rem;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#8a6b32}
+    .muted{color:#6e7480}
+    .pill{display:inline-block;background:#eee7da;border-radius:999px;padding:8px 12px;margin:4px 6px 4px 0}
+    .action{background:#172033;color:white;border:0;border-radius:14px;padding:12px 15px;font-weight:700;margin:6px 6px 6px 0}
+    .danger{background:#8c2f2f}
+    .ok{background:#e8f2e4;color:#2b5b2c;border-radius:14px;padding:12px;font-weight:700}
+    .warn{background:#f7efd8;color:#6f5315;border-radius:14px;padding:12px;font-weight:700}
+    textarea,input{width:100%;font:inherit;padding:12px;border:1px solid #ccc5b9;border-radius:14px;background:#fbfaf7;margin:8px 0 12px}
+    .day{width:100%;text-align:left;background:white;border:1px solid #d8d2c7;border-radius:18px;padding:16px;margin:8px 0;color:#172033}
+    .day b{display:block;font-size:1.1rem;margin-top:3px}
+    .timeline-item{padding:12px 0;border-bottom:1px solid #eee8de}
+    .timeline-time{font-weight:800;color:#8a6b32;margin-bottom:4px}
+    nav{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.97);border-top:1px solid #ddd6ca;display:flex;justify-content:space-around;padding:10px 4px calc(10px + env(safe-area-inset-bottom));z-index:20}
+    nav button{background:none;border:0;color:#6e7480;font-size:.78rem;padding:8px 6px}
+    nav button.active{color:#8a6b32;font-weight:800}
+  </style>
+</head>
+<body>
+<header><small>Private field application shell</small><h1>EEFM Mobile</h1></header>
+<main id="app"><section class="card"><h2>Loading EEFM…</h2></section></main>
+<nav id="tabs"></nav>
+<script src="app.js"></script>
+<script>
+(()=>{
+  const FIELD_MAPS = {
+    9: ["The Queensberry, Bath","Devil's Den","West Kennet Long Barrow / Silbury Hill","West Kennet Avenue","Avebury henge & stone circles","The Queensberry"],
+    10:["Bath","Durrington Walls / Woodhenge","Stonehenge Avenue","Stonehenge","Cursus Barrows","Old Sarum","The Riverside, Salisbury"],
+    13:["House Arundel","Bignor Roman Villa","South Downs","Alfriston","Cuckmere / Seven Sisters / Beachy Head","House Arundel"],
+    15:["Canterbury","Dover Priory","Dover Castle","White Cliffs","Dover Priory","Canterbury"]
+  };
+
+  const style=document.createElement('style');
+  style.textContent=`
+    .eefm-hero{overflow:hidden;padding:0!important}
+    .eefm-hero img{display:block;width:100%;height:220px;object-fit:cover;background:#e7e3db}
+    .eefm-hero-copy{padding:14px 18px 16px}
+    .eefm-hero-credit{font-size:.7rem;color:#777;margin-top:6px}
+    .eefm-nav-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:12px}
+    .eefm-map-btn{display:block;text-align:center;text-decoration:none;background:#172033;color:#fff;border-radius:13px;padding:11px 9px;font-weight:750;font-size:.82rem}
+    .eefm-map-btn.secondary{background:#f1eee7;color:#172033;border:1px solid #d8d2c7}
+    .eefm-nav-place{padding:12px 0;border-bottom:1px solid #eee8de}
+    .eefm-field-map{display:flex;flex-direction:column;gap:0;margin-top:8px}
+    .eefm-field-stop{position:relative;padding:9px 10px 9px 31px;background:#f6f3ec;border-radius:12px;margin:3px 0}
+    .eefm-field-stop:before{content:'●';position:absolute;left:12px;color:#8a6b32}
+    .eefm-field-stop:not(:last-child):after{content:'↓';display:block;position:absolute;left:14px;bottom:-14px;color:#8a6b32;z-index:2}
+    @media (max-width:430px){.eefm-hero img{height:195px}.eefm-nav-grid{grid-template-columns:1fr 1fr}}
+  `;
+  document.head.appendChild(style);
+
+  function imageCard(day){
+    const im=day?.openingImage;
+    if(!im?.url) return '';
+    return card(`<div class="eefm-hero">
+      <img src="${esc(im.url)}" alt="${esc(im.alt||im.caption||day.title||'Daily thematic image')}" loading="lazy" referrerpolicy="no-referrer">
+      <div class="eefm-hero-copy">
+        <div class="eyebrow">Daily image</div>
+        <strong>${esc(im.caption||im.theme||'')}</strong>
+        <div class="eefm-hero-credit">${esc(im.credit||'')}${im.license?' · '+esc(im.license):''}${im.sourcePage?` · <a href="${esc(im.sourcePage)}" target="_blank" rel="noopener">source</a>`:''}</div>
+      </div>
+    </div>`).replace('<section class="card">','<section class="card eefm-hero">');
+  }
+
+  function navCard(day){
+    const nav=Array.isArray(day?.navigation)?day.navigation:[];
+    const field=FIELD_MAPS[Number(day?.day)]||null;
+    if(!nav.length && !field) return '';
+    let body=`<div class="eyebrow">Navigation</div><h2>Open route</h2><p class="muted">Use Apple Maps first on iPhone; Google Maps is available as a second check.</p>`;
+    body+=nav.map(n=>`<div class="eefm-nav-place"><strong>${esc(n.label||'Destination')}</strong><div class="eefm-nav-grid"><a class="eefm-map-btn" href="${esc(n.appleMaps)}" target="_blank" rel="noopener">Apple Maps</a><a class="eefm-map-btn secondary" href="${esc(n.googleMaps)}" target="_blank" rel="noopener">Google Maps</a></div></div>`).join('');
+    if(field){
+      body+=`<div style="margin-top:18px"><div class="eyebrow">Field orientation</div><h3>Schematic sequence</h3><p class="muted">Orientation only — the guide/driver and live conditions control the actual route.</p><div class="eefm-field-map">${field.map(s=>`<div class="eefm-field-stop">${esc(s)}</div>`).join('')}</div></div>`;
+    }
+    return card(body);
+  }
+
+  if(typeof todayScreen==='function'){
+    const originalToday=todayScreen;
+    todayScreen=function(){
+      const day=currentDay();
+      let html=originalToday();
+      if(!day) return html;
+      const hero=imageCard(day);
+      if(hero){
+        const firstEnd=html.indexOf('</section>');
+        if(firstEnd>=0) html=html.slice(0,firstEnd+10)+hero+html.slice(firstEnd+10);
+      }
+      const nav=navCard(day);
+      if(nav){
+        const marker='<section class="card"><div id="timelineSection"';
+        const at=html.indexOf(marker);
+        if(at>=0) html=html.slice(0,at)+nav+html.slice(at); else html+=nav;
+      }
+      return html;
+    };
+  }
+
+  if(typeof moreScreen==='function'){
+    const originalMore=moreScreen;
+    moreScreen=function(){
+      return originalMore()
+        .replace('EEFM shell v1.5.1','EEFM shell v1.6')
+        .replace('Voice + photo Field Research, edit/delete/Important controls, per-day record counts, end-of-day synthesis, local export/backup, date-aware command modes and actual-time logging.','Audited 17-day field release with thematic daily imagery, one-tap Apple/Google navigation, field-orientation schematics, voice + photo research, local backup and actual-time logging.');
+    };
+  }
+
+  // Re-render once so the already-loaded screen receives the enrichment layer.
+  if(typeof render==='function') render();
+})();
+
+</script>
+<script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js"));
+}
+</script>
+</body>
+</html>
